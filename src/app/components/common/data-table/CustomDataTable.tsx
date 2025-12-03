@@ -12,6 +12,7 @@ import {
   type SortingState,
   useReactTable,
   type VisibilityState,
+  type Row, // ✅ Add this import for better typing
 } from "@tanstack/react-table"
 import { ArrowUpDown, Download, Trash2, Columns, CalendarIcon, FilterIcon } from "lucide-react"
 
@@ -22,7 +23,6 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -74,8 +74,12 @@ const exportToCSV = (rows: any[], columns: ColumnDef<any, any>[], filename: stri
   window.URL.revokeObjectURL(url)
 }
 
-// ✅ Exact match filter (fixes Active/Inactive issue)
-const exactMatchFilter = (row: any, columnId: string, filterValue: string) => {
+// ✅ Exact match filter (now with explicit Row<TData> typing for generics)
+const exactMatchFilter: (row: Row<any>, columnId: string, filterValue: string) => boolean = (
+  row,
+  columnId,
+  filterValue
+) => {
   if (!filterValue) return true
   const value = row.getValue(columnId)
   return String(value).toLowerCase() === String(filterValue).toLowerCase()
@@ -97,14 +101,14 @@ export function CustomDataTable<TData, TValue>({
 
   const [dateFilters, setDateFilters] = React.useState<Record<string, { from?: Date; to?: Date }>>({})
 
-  // ✅ Enhance columns: attach exact filterFn automatically for select filters
+  // ✅ Enhance columns: attach exactMatchFilter function directly (type-safe, no string key)
   const enhancedColumns = React.useMemo(() => {
     return columns.map((col) => {
       const filter = filters.find((f) => f.type === "select" && f.column === (col as any).accessorKey)
       if (filter) {
         return {
           ...col,
-          filterFn: "exact" as const,
+          filterFn: exactMatchFilter, // ✅ Use function ref instead of "exact" string
         }
       }
       return col
@@ -116,7 +120,7 @@ export function CustomDataTable<TData, TValue>({
     columns: enhancedColumns,
     enableRowSelection: true,
     filterFns: {
-      exact: exactMatchFilter, // ✅ register exact filter
+      exact: exactMatchFilter, // ✅ Still register for any other string-based usage
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
