@@ -14,7 +14,7 @@ export default function OTPPage() {
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [countdown, setCountdown] = useState(59);
-  const inputRefs = useRef<HTMLInputElement[]>([]);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const verifyOTP = useVerifyOTP();
   const resendOTP = useResendOtp();
@@ -123,7 +123,9 @@ export default function OTPPage() {
               {otp.map((digit, index) => (
                 <input
                   key={index}
-                  ref={(el) => (inputRefs.current[index] = el!)}
+                  ref={(el) => {
+  if (el) inputRefs.current[index] = el;
+}}
                   type="text"
                   maxLength={1}
                   value={digit}
