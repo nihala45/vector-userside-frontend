@@ -1,52 +1,79 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-"use client"
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from "react-router";
-import { toast } from 'sonner';
+"use client";
 
-type MutationParams<T> = {
-  apiCall: (data: T) => Promise<any>;
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+
+type MutationParams<TVariables, TData = unknown, TError = Error, TContext = unknown> = {
+  apiCall: (data: TVariables) => Promise<TData>;
   onSuccessMessage?: string;
-  queryKeyToInvalidate?: string;
+  queryKeyToInvalidate?: string | string[];
   redirectTo?: string;
+  onSuccess?: (data: TData, variables: TVariables, context: TContext | undefined) => void;
+  onError?: (error: TError, variables: TVariables, context: TContext | undefined) => void;
+  onSettled?: (
+    data: TData | undefined,
+    error: TError | null,
+    variables: TVariables,
+    context: TContext | undefined
+  ) => void;
 };
 
-export const useGenericMutation = <T>({
+export const useGenericMutation = <
+  TVariables,
+  TData = unknown,
+  TError = Error,
+  TContext = unknown,
+>({
   apiCall,
-  onSuccessMessage = 'Operation successful',
+  onSuccessMessage = "Operation successful",
   queryKeyToInvalidate,
-  redirectTo
-}: MutationParams<T>) => {
+  redirectTo,
+  onSuccess,
+  onError,
+  onSettled,
+}: MutationParams<TVariables, TData, TError, TContext>) => {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
+  const router = useRouter();
 
-  return useMutation({
-    mutationFn: async (data: T) => {
-      try {
-        console.log(data)
-        const response = await apiCall(data);
-        return response;
-      } catch (error) {
-        console.log('Error:', error);
-        throw error;
+  return useMutation<TData, TError, TVariables, TContext>({
+    mutationFn: apiCall,
+
+    onSuccess: (data, variables, context) => {
+      toast.success(onSuccessMessage);
+
+      if (redirectTo) {
+        router.push(redirectTo);
       }
-    },
-    onMutate: () => {
-      console.log('mutate');
-    },
-    onSettled: async (_, error:any) => {
-      if (error) {
-        console.log(error);
-        toast.error(error.message);
-      } else {
-        toast.success(onSuccessMessage);
-        if (redirectTo) {
-          navigate(redirectTo); 
-        }
-        if (queryKeyToInvalidate) {
-          await queryClient.invalidateQueries({ queryKey: [queryKeyToInvalidate] });
-        }
+
+      if (queryKeyToInvalidate) {
+        const keys = Array.isArray(queryKeyToInvalidate)
+          ? queryKeyToInvalidate
+          : [queryKeyToInvalidate];
+
+        keys.forEach((key) => {
+          queryClient.invalidateQueries({ 
+            queryKey: typeof key === "string" ? [key] : key 
+          });
+        });
       }
-    }
+
+      // Safely call external onSuccess with proper typing
+      onSuccess?.(data, variables, context);
+    },
+
+    onError: (error, variables, context) => {
+      const message =
+        error instanceof Error ? error.message : "An unexpected error occurred";
+      toast.error(message);
+
+      // Safely call external onError with proper typing
+      onError?.(error, variables, context);
+    },
+
+    onSettled: (data, error, variables, context) => {
+      onSettled?.(data, error, variables, context);
+    },
   });
 };

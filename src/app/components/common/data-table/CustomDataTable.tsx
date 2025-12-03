@@ -57,31 +57,42 @@ interface CustomDataTableProps<TData, TValue> {
   filters?: FilterConfig[]
 }
 
+// FIXED: CSV Export — 100% TypeScript safe
 const exportToCSV = (data: any[], columns: ColumnDef<any, any>[], filename: string) => {
-  const headers = columns.map(col => String(col.header ?? col.id ?? "")).join(",")
+  const headers = columns
+    .map(col => {
+      if (typeof col.header === "function") return col.id ?? ""
+      if (typeof col.header === "string") return col.header
+      return col.id ?? ""
+    })
+    .join(",")
+
   const rows = data.map(row =>
     columns
       .map(col => {
-        const value = (col as any).accessorKey ? row[(col as any).accessorKey] : ""
-        return `"${String(value).replace(/"/g, '""')}"`
+        const key = (col as any).accessorKey
+        const value = key ? row[key] : ""
+        return `"${String(value ?? "").replace(/"/g, '""')}"`
       })
       .join(",")
   )
- const csv = [[headers], ...rows].map(r => r.join("\n")).join("\n");
-const blob = new Blob([csv], { type: "text/csv" });
 
+  const csvContent = [headers, ...rows].join("\n")
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+  const link = document.createElement("a")
+  link.setAttribute("href", url)
+  link.setAttribute("download", filename)
+  link.style.visibility = "hidden"
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 const exactMatchFilter = (row: Row<any>, columnId: string, filterValue: string) => {
   if (!filterValue) return true
   const value = row.getValue(columnId)
-  return String(value).toLowerCase() === filterValue.toString().toLowerCase()
+  return String(value).toLowerCase() === filterValue.toLowerCase()
 }
 
 export function CustomDataTable<TData, TValue>({
@@ -97,8 +108,6 @@ export function CustomDataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
-
-  // THIS IS THE FIX — use proper DateRange | undefined
   const [dateFilters, setDateFilters] = React.useState<Record<string, DateRange | undefined>>({})
 
   const enhancedColumns = React.useMemo(() => {
@@ -145,7 +154,6 @@ export function CustomDataTable<TData, TValue>({
 
   return (
     <div className="w-full bg-white rounded-lg border shadow-sm">
-      {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 p-4 border-b">
         <Input
           placeholder="Search..."
@@ -156,11 +164,7 @@ export function CustomDataTable<TData, TValue>({
 
         <div className="flex flex-wrap gap-2 ml-auto">
           {onDeleteSelected && table.getSelectedRowModel().rows.length > 0 && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => onDeleteSelected(table.getSelectedRowModel().rows.map(r => r.original))}
-            >
+            <Button variant="destructive" size="sm" onClick={() => onDeleteSelected(table.getSelectedRowModel().rows.map(r => r.original))}>
               <Trash2 className="h-4 w-4 mr-2" /> Delete
             </Button>
           )}
@@ -184,7 +188,6 @@ export function CustomDataTable<TData, TValue>({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Date Range — NOW TYPE-SAFE */}
           {filters.some(f => f.type === "date") && (
             <Popover>
               <PopoverTrigger asChild>
@@ -218,7 +221,6 @@ export function CustomDataTable<TData, TValue>({
             </Popover>
           )}
 
-          {/* Select Filters */}
           {filters.some(f => f.type === "select") && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -253,12 +255,11 @@ export function CustomDataTable<TData, TValue>({
           )}
 
           <Button variant="outline" size="sm" onClick={() => exportToCSV(data, columns, exportFileName)}>
-            <Download className="h-4 w-4 mr-2" /> Export
+            <Download className="h-4 w-4 mr-2" /> Export CSV
           </Button>
         </div>
       </div>
 
-      {/* Table & Pagination — unchanged */}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
