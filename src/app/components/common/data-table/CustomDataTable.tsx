@@ -4,6 +4,7 @@ import * as React from "react"
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type Row,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -12,10 +13,9 @@ import {
   type SortingState,
   useReactTable,
   type VisibilityState,
-  type Row, // ✅ Add this import for better typing
 } from "@tanstack/react-table"
-import { ArrowUpDown, Download, Trash2, Columns, CalendarIcon, FilterIcon } from "lucide-react"
 
+import { ArrowUpDown, Download, Trash2, Columns, CalendarIcon, FilterIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -52,15 +52,16 @@ interface CustomDataTableProps<TData, TValue> {
   filters?: FilterConfig[]
 }
 
-// CSV Export Helper
+// CSV Export
 const exportToCSV = (rows: any[], columns: ColumnDef<any, any>[], filename: string) => {
-  const headers = columns.map((c) => (c.header as any)?.toString?.() ?? c.id)
+  const headers = columns.map((c) => (c.header as any)?.toString?.() ?? c.id ?? "")
   const csvRows = [headers.join(",")]
 
   rows.forEach((row) => {
     const values = columns.map((col) => {
       const key = (col as any).accessorKey
-      return key ? row[key] : ""
+      const value = key ? row[key] : ""
+      return `"${String(value).replace(/"/g, '""')}"`
     })
     csvRows.push(values.join(","))
   })
@@ -74,12 +75,8 @@ const exportToCSV = (rows: any[], columns: ColumnDef<any, any>[], filename: stri
   window.URL.revokeObjectURL(url)
 }
 
-// ✅ Exact match filter (now with explicit Row<TData> typing for generics)
-const exactMatchFilter: (row: Row<any>, columnId: string, filterValue: string) => boolean = (
-  row,
-  columnId,
-  filterValue
-) => {
+// Exact match filter for select columns
+const exactMatchFilter = (row: Row<any>, columnId: string, filterValue: string) => {
   if (!filterValue) return true
   const value = row.getValue(columnId)
   return String(value).toLowerCase() === String(filterValue).toLowerCase()
@@ -98,18 +95,16 @@ export function CustomDataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
-
   const [dateFilters, setDateFilters] = React.useState<Record<string, { from?: Date; to?: Date }>>({})
 
-  // ✅ Enhance columns: attach exactMatchFilter function directly (type-safe, no string key)
+  // Attach exact filter to select-type columns
   const enhancedColumns = React.useMemo(() => {
     return columns.map((col) => {
-      const filter = filters.find((f) => f.type === "select" && f.column === (col as any).accessorKey)
-      if (filter) {
-        return {
-          ...col,
-          filterFn: exactMatchFilter, // ✅ Use function ref instead of "exact" string
-        }
+      const filterConfig = filters.find(
+        (f) => f.type === "select" && f.column === (col as any).accessorKey
+      )
+      if (filterConfig) {
+        return { ...col, filterFn: exactMatchFilter }
       }
       return col
     })
@@ -119,17 +114,15 @@ export function CustomDataTable<TData, TValue>({
     data,
     columns: enhancedColumns,
     enableRowSelection: true,
-    filterFns: {
-      exact: exactMatchFilter, // ✅ Still register for any other string-based usage
-    },
+    filterFns: { exact: exactMatchFilter },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     state: {
       sorting,
       columnFilters,
@@ -137,143 +130,121 @@ export function CustomDataTable<TData, TValue>({
       rowSelection,
       globalFilter,
     },
-    globalFilterFn: (row, columnId, filterValue) => {
-      const value = row.getValue(columnId)
-      return String(value).toLowerCase().includes(String(filterValue).toLowerCase())
-    },
+    globalFilterFn: "includesString",
   })
 
-  const filteredRows = table.getSortedRowModel().rows.filter((row) => {
-    return filters.every((f) => {
-      if (f.type !== "date") return true
-      const colValue = row.getValue(f.column)
-      const { from, to } = dateFilters[f.column] || {}
-      if (!colValue) return true
-      const dateValue = new Date(colValue)
-      if (from && dateValue < from) return false
-      if (to && dateValue > to) return false
-      return true
+  // Custom date range filtering (outside TanStack to avoid complexity)
+  const filteredRows = React.useMemo(() => {
+    return table.getSortedRowModel().rows.filter((row) => {
+      return filters.every((f) => {
+        if (f.type !== "date") return true
+
+        const colValue = row.getValue(f.column)
+        const range = dateFilters[f.column] || {}
+        const from = range.from instanceof Date ? range.from : undefined
+        const to = range.to instanceof Date ? range.to : undefined
+
+        if (!colValue) return true
+        const dateValue = new Date(colValue as string | number | Date)
+
+        if (from && dateValue < from) return false
+        if (to && dateValue > to) return false
+        return true
+      })
     })
-  })
+  }, [table.getSortedRowModel().rows, dateFilters, filters])
 
-  // ✅ Apply pagination after filtering and sorting
   const { pageIndex, pageSize } = table.getState().pagination
   const paginatedRows = filteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)
 
   return (
-    <div className="w-full bg-white p-1 px-4 rounded-md">
+    <div className="w-full bg-white rounded-md border">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 py-4">
-        {/* Global Search */}
+      <div className="flex flex-col sm:flex-row gap-4 p-4 border-b">
         <Input
-          placeholder="Search..."
+          placeholder="Search all columns..."
           value={globalFilter ?? ""}
           onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-sm h-12"
+          className="max-w-sm"
         />
 
-        {/* Multi Delete */}
-        {onDeleteSelected && table.getFilteredSelectedRowModel().rows.length > 0 && (
-          <Button
-            variant="destructive"
-            className="flex items-center gap-2 cursor-pointer"
-            onClick={() => onDeleteSelected(table.getFilteredSelectedRowModel().rows.map((r) => r.original))}
-          >
-            <Trash2 className="h-4 w-4" /> Delete Selected
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2 ml-auto">
+          {/* Delete Selected */}
+          {onDeleteSelected && table.getSelectedRowModel().rows.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => onDeleteSelected(table.getSelectedRowModel().rows.map((r) => r.original))}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete ({table.getSelectedRowModel().rows.length})
+            </Button>
+          )}
 
-        <div className="ml-auto flex gap-2 items-center">
-          {/* Columns Button */}
+          {/* Column Visibility */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="flex items-center gap-2 h-12 bg-transparent">
-                <Columns className="h-4 w-4" /> Columns
+              <Button variant="outline" size="sm">
+                <Columns className="h-4 w-4 mr-2" />
+                Columns
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {table
-                .getAllColumns()
-                .filter((column) => column.getCanHide())
-                .map((column) => {
-                  const id = column.id.toLowerCase()
-                  let label = column.id
-
-                  if (id.includes("address")) {
-                    label = "Location"
-                  } else if (id.includes("manager")) {
-                    label = "Manager"
-                  }
-
-                  return (
-                    <DropdownMenuCheckboxItem
-                      key={column.id}
-                      className="capitalize"
-                      checked={column.getIsVisible()}
-                      onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                    >
-                      {label}
-                    </DropdownMenuCheckboxItem>
-                  )
-                })}
+              {table.getAllColumns().filter((c) => c.getCanHide()).map((column) => (
+                <DropdownMenuCheckboxItem
+                  key={column.id}
+                  checked={column.getIsVisible()}
+                  onCheckedChange={(v) => column.toggleVisibility(!!v)}
+                >
+                  {String(column.columnDef.header ?? column.id)}
+                </DropdownMenuCheckboxItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Date Range Button */}
+          {/* Date Range Filter */}
           {filters.some((f) => f.type === "date") && (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" className="flex items-center gap-2 h-12 bg-transparent">
-                  <CalendarIcon className="h-4 w-4" /> Select Date Range
+                <Button variant="outline" size="sm">
+                  <CalendarIcon className="h-4 w-4 mr-2" />
+                  Date Range
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                {filters
-                  .filter((f) => f.type === "date")
-                  .map((f) => {
-                    return (
-                      <div key={f.column} className="p-2">
-                        <Calendar
-                          initialFocus
-                          mode="range"
-                          defaultMonth={dateFilters[f.column]?.from}
-                          selected={dateFilters[f.column]}
-                          onSelect={(range) =>
-                            setDateFilters((prev) => ({
-                              ...prev,
-                              [f.column]: range || {},
-                            }))
-                          }
-                          numberOfMonths={2}
-                        />
-                        {/* Reset Button */}
-                        <div className="p-2 flex justify-end">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              setDateFilters((prev) => ({
-                                ...prev,
-                                [f.column]: {},
-                              }))
-                            }
-                          >
-                            Reset
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
+              <PopoverContent className="w-auto p-3" align="start">
+                {filters.filter((f) => f.type === "date").map((f) => (
+                  <div key={f.column} className="mb-4 last:mb-0">
+                    <p className="text-sm font-medium mb-2">{f.placeholder}</p>
+                    <Calendar
+                      mode="range"
+                      selected={dateFilters[f.column]}
+                      onSelect={(range) =>
+                        setDateFilters((prev) => ({ ...prev, [f.column]: range || {} }))
+                      }
+                      numberOfMonths={2}
+                      className="rounded-md border"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 w-full"
+                      onClick={() => setDateFilters((prev) => ({ ...prev, [f.column]: {} }))}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                ))}
               </PopoverContent>
             </Popover>
           )}
 
-          {/* Status Filter Button */}
+          {/* Select Filters */}
           {filters.some((f) => f.type === "select") && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="flex items-center gap-2 h-12 bg-transparent">
-                  <FilterIcon className="h-4 w-4" /> Filter By Status
+                <Button variant="outline" size="sm">
+                  <FilterIcon className="h-4 w-4 mr-2" />
+                  Filters
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -282,34 +253,24 @@ export function CustomDataTable<TData, TValue>({
                   .map((f) => {
                     const options = Array.from(new Set(data.map((d: any) => d[f.column])))
                     const column = table.getColumn(f.column)
-
-                    const currentValue = column?.getFilterValue() as string | undefined
+                    const value = column?.getFilterValue() as string | undefined
 
                     return (
                       <div key={f.column} className="p-2">
                         <Select
-                          value={currentValue ?? "__all__"}
-                          onValueChange={(value) => {
-                            if (value === "__all__") {
-                              column?.setFilterValue(undefined) // clear filter
-                            } else {
-                              column?.setFilterValue(value)
-                            }
-                          }}
+                          value={value ?? ""}
+                          onValueChange={(v) => column?.setFilterValue(v || undefined)}
                         >
-                          <SelectTrigger className="w-[180px] h-10">
+                          <SelectTrigger className="w-48">
                             <SelectValue placeholder={f.placeholder} />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectGroup>
-                              <SelectLabel>{f.placeholder}</SelectLabel>
-                              <SelectItem value="__all__">All</SelectItem>
-                              {options.map((option) => (
-                                <SelectItem key={option} value={String(option)}>
-                                  {String(option)}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
+                            <SelectItem value="">All</SelectItem>
+                            {options.map((opt) => (
+                              <SelectItem key={opt} value={String(opt)}>
+                                {String(opt)}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -319,34 +280,31 @@ export function CustomDataTable<TData, TValue>({
             </DropdownMenu>
           )}
 
-          {/* Export */}
-          <Button
-            variant="outline"
-            className="flex items-center gap-2 h-12 bg-transparent"
-            onClick={() => exportToCSV(data, columns, exportFileName)}
-          >
-            <Download className="h-4 w-4" /> Export CSV
+          {/* Export CSV */}
+          <Button variant="outline" size="sm" onClick={() => exportToCSV(data, columns, exportFileName)}>
+            <Download className="h-4 w-4 mr-2" />
+            Export
           </Button>
         </div>
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden">
+      <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow className="border" key={headerGroup.id}>
+              <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead className="border bg-gray-50" key={header.id}>
+                  <TableHead
+                    key={header.id}
+                    className="text-left font-medium"
+                    onClick={header.column.getToggleSortingHandler()}
+                    style={{ cursor: header.column.getCanSort() ? "pointer" : "default" }}
+                  >
                     {header.isPlaceholder ? null : (
-                      <div
-                        className={
-                          header.column.getCanSort() ? "cursor-pointer select-none flex items-center gap-1" : ""
-                        }
-                        onClick={header.column.getToggleSortingHandler()}
-                      >
+                      <div className="flex items-center gap-1">
                         {flexRender(header.column.columnDef.header, header.getContext())}
-                        {header.column.getCanSort() && <ArrowUpDown className="h-4 w-4" />}
+                        {header.column.getIsSorted() && <ArrowUpDown className="h-4 w-4" />}
                       </div>
                     )}
                   </TableHead>
@@ -360,16 +318,11 @@ export function CustomDataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className={onRowClick ? "cursor-pointer hover:bg-gray-50" : ""}
-                  onClick={(e) => {
-                    if (!onRowClick) return
-                    const target = e.target as HTMLElement
-                    if (target.closest("[data-stop-propagation]")) return
-                    onRowClick(row.original)
-                  }}
+                  className={onRowClick ? "cursor-pointer hover:bg-muted/50" : ""}
+                  onClick={() => onRowClick?.(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell className="border" key={cell.id}>
+                    <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
@@ -377,51 +330,53 @@ export function CustomDataTable<TData, TValue>({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No results.
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                  No results found.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+      </div>
 
-        {/* Pagination */}
-        <div className="flex items-center justify-between py-4">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              Previous
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
-              Next
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-sm">
-              Page{" "}
-              <strong>
-                {pageIndex + 1} of {Math.ceil(filteredRows.length / pageSize) || 1}
-              </strong>
-            </span>
-
-            <Select value={String(pageSize)} onValueChange={(value) => table.setPageSize(Number(value))}>
-              <SelectTrigger className="w-[80px] h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[5, 10, 20, 50].map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Pagination */}
+      <div className="flex items-center justify-between px-4 py-3 border-t">
+        <div className="text-sm text-muted-foreground">
+          Showing {pageIndex * pageSize + 1} to{" "}
+          {Math.min((pageIndex + 1) * pageSize, filteredRows.length)} of {filteredRows.length} results
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next
+          </Button>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => table.setPageSize(Number(v))}
+          >
+            <SelectTrigger className="w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 20, 50, 100].map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>
