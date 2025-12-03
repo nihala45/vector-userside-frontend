@@ -1,58 +1,351 @@
-"use client";
+"use client"
 
-import Link from "next/link";
-import Image from "next/image";
+import * as React from "react"
+import {
+  type ColumnDef,
+  type ColumnFiltersState,
+  type Row,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  type SortingState,
+  useReactTable,
+  type VisibilityState,
+} from "@tanstack/react-table"
 
-export default function Home() {
+import { ArrowUpDown, Download, Trash2, Columns, CalendarIcon, FilterIcon } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import type { DateRange } from "react-day-picker" // <-- This fixes the type error
+
+interface FilterConfig {
+  type: "select" | "date"
+  column: string
+  placeholder: string
+}
+
+interface CustomDataTableProps<TData, TValue> {
+  columns: ColumnDef<TData, TValue>[]
+  data: TData[]
+  exportFileName?: string
+  onDeleteSelected?: (rows: TData[]) => void
+  onRowClick?: (row: TData) => void
+  filters?: FilterConfig[]
+}
+
+// CSV Export
+const exportToCSV = (rows: any[], columns: ColumnDef<any, any>[], filename: string) => {
+  const headers = columns.map((c) => (c.header as any)?.toString?.() ?? c.id ?? "")
+  const csvRows = [headers.join(",")]
+
+  rows.forEach((row) => {
+    const values = columns.map((col) => {
+      const key = (col as any).accessorKey
+      const value = key ? row[key] : ""
+      return `"${String(value).replace(/"/g, '""')}"`
+    })
+    csvRows.push(values.join(","))
+  })
+
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv" })
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  a.click()
+  window.URL.revokeObjectURL(url)
+}
+
+// Exact match filter
+const exactMatchFilter = (row: Row<any>, columnId: string, filterValue: string) => {
+  if (!filterValue) return true
+  const value = row.getValue(columnId)
+  return String(value).toLowerCase() === String(filterValue).toLowerCase()
+}
+
+export function CustomDataTable<TData, TValue>({
+  columns,
+  data,
+  exportFileName = "data.csv",
+  onDeleteSelected,
+  onRowClick,
+  filters = [],
+}: CustomDataTableProps<TData, TValue>) {
+  const [sorting, setSorting] = React.useState<SortingState>([])
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
+  const [rowSelection, setRowSelection] = React.useState({})
+  const [globalFilter, setGlobalFilter] = React.useState("")
+  
+  // Fixed: Proper DateRange type (from is required when defined)
+  const [dateFilters, setDateFilters] = React.useState<Record<string, DateRange | undefined>>({})
+
+  const enhancedColumns = React.useMemo(() => {
+    return columns.map((col) => {
+      const filterConfig = filters.find(
+        (f) => f.type === "select" && f.column === (col as any).accessorKey
+      )
+      if (filterConfig) {
+        return { ...col, filterFn: exactMatchFilter }
+      }
+      return col
+    })
+  }, [columns, filters])
+
+  const table = useReactTable({
+    data,
+    columns: enhancedColumns,
+    enableRowSelection: true,
+    filterFns: { exact: exactMatchFilter },
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+      rowSelection,
+      globalFilter,
+    },
+    globalFilterFn: "includesString",
+  })
+
+  // Custom date filtering
+  const filteredRows = React.useMemo(() => {
+    return table.getSortedRowModel().rows.filter((row) => {
+      return filters.every((f) => {
+        if (f.type !== "date") return true
+
+        const colValue = row.getValue(f.column)
+        const range = dateFilters[f.column]
+
+        if (!colValue || !range || !range.from) return true
+
+        const dateValue = new Date(colValue as string | number | Date)
+        const from = range.from
+        const to = range.to
+
+        if (from && dateValue < from) return false
+        if (to && dateValue > to) return false
+        return true
+      })
+    })
+  }, [table.getSortedRowModel().rows, dateFilters, filters])
+
+  const { pageIndex, pageSize } = table.getState().pagination
+  const paginatedRows = filteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
-    
-      {/* Left Section - Image */}
-      <div className="hidden lg:flex lg:w-1/2 relative">
-        <Image
-          src="/vector-login.jpeg"
-          alt="Learning Illustration"
-          fill
-          priority
-          className="object-cover rounded-r-3xl shadow-2xl"
+    <div className="w-full bg-white rounded-md border">
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-4 p-4 border-b">
+        <Input
+          placeholder="Search..."
+          value={globalFilter ?? ""}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          className="max-w-sm"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/50 to-transparent rounded-r-3xl" />
-      </div>
 
-      {/* Right Section */}
-      <div className="flex-1 flex items-center justify-center px-6 py-20 lg:px-12">
-        <div className="w-full max-w-lg text-center lg:text-left">
-
-          <h1 className="text-4xl font-extrabold text-gray-900 leading-tight">
-            Welcome to <span className="text-purple-700">Vector Learning</span>
-          </h1>
-
-          <p className="mt-4 text-gray-600 text-lg">
-            Start your journey with high-quality learning materials, accessible anytime.
-          </p>
-
-          {/* Buttons */}
-          <div className="mt-10 space-y-4 sm:space-y-0 sm:flex sm:gap-4">
-            
-            <Link
-              href="/auth/login"
-              className="block w-full sm:w-auto bg-purple-700 text-white font-semibold px-6 py-3 rounded-lg shadow-lg hover:bg-purple-800 transition"
+        <div className="flex flex-wrap gap-2 ml-auto">
+          {onDeleteSelected && table.getSelectedRowModel().rows.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => onDeleteSelected(table.getSelectedRowModel().rows.map(r => r.original))}
             >
-              Login
-            </Link>
+              <Trash2 className="h-4 w-4 mr-2" /> Delete
+            </Button>
+          )}
 
-            <Link
-              href="/auth/register"
-              className="block w-full sm:w-auto border border-purple-700 text-purple-700 font-semibold px-6 py-3 rounded-lg hover:bg-purple-50 transition"
-            >
-              Create Account
-            </Link>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Columns className="h-4 w-4 mr-2" /> Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {table.getAllColumns().filter(c => c.getCanHide()).map(column => (
+                <DropdownMenuCheckboxItem
+                  key={column.id}
+                  checked={column.getIsVisible()}
+                  onCheckedChange={v => column.toggleVisibility(!!v)}
+                >
+                  {String(column.columnDef.header ?? column.id)}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          </div>
+          {/* Date Range */}
+          {filters.some(f => f.type === "date") && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <CalendarIcon className="h-4 w-4 mr-2" /> Date Range
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-3" align="start">
+                {filters.filter(f => f.type === "date").map(f => (
+                  <div key={f.column} className="mb-4 last:mb-0">
+                    <p className="text-sm font-medium mb-2">{f.placeholder}</p>
+                    <Calendar
+                      mode="range"
+                      selected={dateFilters[f.column]}
+                      onSelect={(range) => setDateFilters(prev => ({ ...prev, [f.column]: range }))}
+                      numberOfMonths={2}
+                      className="rounded-md border"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 w-full"
+                      onClick={() => setDateFilters(prev => ({ ...prev, [f.column]: undefined }))}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                ))}
+              </PopoverContent>
+            </Popover>
+          )}
 
+          {/* Select Filters */}
+          {filters.some(f => f.type === "select") && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <FilterIcon className="h-4 w-4 mr-2" /> Filters
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {filters.filter(f => f.type === "select").map(f => {
+                  const options = Array.from(new Set(data.map((d: any) => d[f.column])))
+                  const column = table.getColumn(f.column)
+                  const value = column?.getFilterValue() as string | undefined
+
+                  return (
+                    <div key={f.column} className="p-2">
+                      <Select value={value ?? ""} onValueChange={v => column?.setFilterValue(v || undefined)}>
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder={f.placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All</SelectItem>
+                          {options.map(opt => (
+                            <SelectItem key={opt} value={String(opt)}>{String(opt)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          <Button variant="outline" size="sm" onClick={() => exportToCSV(data, columns, exportFileName)}>
+            <Download className="h-4 w-4 mr-2" /> Export
+          </Button>
         </div>
       </div>
 
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map(headerGroup => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map(header => (
+                  <TableHead
+                    key={header.id}
+                    className={header.column.getCanSort() ? "cursor-pointer select-none" : ""}
+                    onClick={header.column.getToggleSortingHandler()}
+                  >
+                    <div className="flex items-center gap-1">
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.column.getIsSorted() && <ArrowUpDown className="h-4 w-4" />}
+                    </div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {paginatedRows.length ? (
+              paginatedRows.map(row => (
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && "selected"}
+                  className={onRowClick ? "cursor-pointer hover:bg-muted/50" : ""}
+                  onClick={() => onRowClick?.(row.original)}
+                >
+                  {row.getVisibleCells().map(cell => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                  No results found.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
+        <div className="text-muted-foreground">
+          Showing {pageIndex * pageSize + 1} to {Math.min((pageIndex + 1) * pageSize, filteredRows.length)} of {filteredRows.length}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+            Previous
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+            Next
+          </Button>
+          <Select value={String(pageSize)} onValueChange={v => table.setPageSize(Number(v))}>
+            <SelectTrigger className="w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[10, 20, 50, 100].map(size => (
+                <SelectItem key={size} value={String(size)}>{size}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
     </div>
-  );
+  )
 }
