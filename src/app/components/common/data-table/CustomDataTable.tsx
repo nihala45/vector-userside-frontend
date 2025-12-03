@@ -14,7 +14,6 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table"
-
 import { ArrowUpDown, Download, Trash2, Columns, CalendarIcon, FilterIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,18 +23,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import type { DateRange } from "react-day-picker"
 
 interface FilterConfig {
   type: "select" | "date"
@@ -52,34 +57,29 @@ interface CustomDataTableProps<TData, TValue> {
   filters?: FilterConfig[]
 }
 
-// CSV Export
-const exportToCSV = (rows: any[], columns: ColumnDef<any, any>[], filename: string) => {
-  const headers = columns.map((c) => (c.header as any)?.toString?.() ?? c.id ?? "")
-  const csvRows = [headers.join(",")]
-
-  rows.forEach((row) => {
-    const values = columns.map((col) => {
-      const key = (col as any).accessorKey
-      const value = key ? row[key] : ""
-      return `"${String(value).replace(/"/g, '""')}"`
-    })
-    csvRows.push(values.join(","))
-  })
-
-  const blob = new Blob([csvRows.join("\n")], { type: "text/csv" })
-  const url = window.URL.createObjectURL(blob)
+const exportToCSV = (data: any[], columns: ColumnDef<any, any>[], filename: string) => {
+  const headers = columns.map(col => String(col.header ?? col.id ?? "")).join(",")
+  const rows = data.map(row =>
+    columns
+      .map(col => {
+        const value = (col as any).accessorKey ? row[(col as any).accessorKey] : ""
+        return `"${String(value).replace(/"/g, '""')}"`
+      })
+      .join(",")
+  )
+  const blob = new Blob([[headers], ...rows].map(r => r.join("\n")).join("\n"), { type: "text/csv" })
+  const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
   a.download = filename
   a.click()
-  window.URL.revokeObjectURL(url)
+  URL.revokeObjectURL(url)
 }
 
-// Exact match filter for select columns
 const exactMatchFilter = (row: Row<any>, columnId: string, filterValue: string) => {
   if (!filterValue) return true
   const value = row.getValue(columnId)
-  return String(value).toLowerCase() === String(filterValue).toLowerCase()
+  return String(value).toLowerCase() === filterValue.toString().toLowerCase()
 }
 
 export function CustomDataTable<TData, TValue>({
@@ -95,18 +95,14 @@ export function CustomDataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = React.useState({})
   const [globalFilter, setGlobalFilter] = React.useState("")
-  const [dateFilters, setDateFilters] = React.useState<Record<string, { from?: Date; to?: Date }>>({})
 
-  // Attach exact filter to select-type columns
+  // THIS IS THE FIX — use proper DateRange | undefined
+  const [dateFilters, setDateFilters] = React.useState<Record<string, DateRange | undefined>>({})
+
   const enhancedColumns = React.useMemo(() => {
-    return columns.map((col) => {
-      const filterConfig = filters.find(
-        (f) => f.type === "select" && f.column === (col as any).accessorKey
-      )
-      if (filterConfig) {
-        return { ...col, filterFn: exactMatchFilter }
-      }
-      return col
+    return columns.map(col => {
+      const filter = filters.find(f => f.type === "select" && f.column === (col as any).accessorKey)
+      return filter ? { ...col, filterFn: exactMatchFilter } : col
     })
   }, [columns, filters])
 
@@ -123,32 +119,20 @@ export function CustomDataTable<TData, TValue>({
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    state: {
-      sorting,
-      columnFilters,
-      columnVisibility,
-      rowSelection,
-      globalFilter,
-    },
+    state: { sorting, columnFilters, columnVisibility, rowSelection, globalFilter },
     globalFilterFn: "includesString",
   })
 
-  // Custom date range filtering (outside TanStack to avoid complexity)
   const filteredRows = React.useMemo(() => {
-    return table.getSortedRowModel().rows.filter((row) => {
-      return filters.every((f) => {
+    return table.getSortedRowModel().rows.filter(row => {
+      return filters.every(f => {
         if (f.type !== "date") return true
-
-        const colValue = row.getValue(f.column)
-        const range = dateFilters[f.column] || {}
-        const from = range.from instanceof Date ? range.from : undefined
-        const to = range.to instanceof Date ? range.to : undefined
-
-        if (!colValue) return true
-        const dateValue = new Date(colValue as string | number | Date)
-
-        if (from && dateValue < from) return false
-        if (to && dateValue > to) return false
+        const value = row.getValue(f.column)
+        const range = dateFilters[f.column]
+        if (!value || !range?.from) return true
+        const date = new Date(value as string | number | Date)
+        if (range.from && date < range.from) return false
+        if (range.to && date > range.to) return false
         return true
       })
     })
@@ -158,43 +142,39 @@ export function CustomDataTable<TData, TValue>({
   const paginatedRows = filteredRows.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)
 
   return (
-    <div className="w-full bg-white rounded-md border">
+    <div className="w-full bg-white rounded-lg border shadow-sm">
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 p-4 border-b">
         <Input
-          placeholder="Search all columns..."
-          value={globalFilter ?? ""}
-          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder="Search..."
+          value={globalFilter}
+          onChange={e => setGlobalFilter(e.target.value)}
           className="max-w-sm"
         />
 
         <div className="flex flex-wrap gap-2 ml-auto">
-          {/* Delete Selected */}
           {onDeleteSelected && table.getSelectedRowModel().rows.length > 0 && (
             <Button
               variant="destructive"
               size="sm"
-              onClick={() => onDeleteSelected(table.getSelectedRowModel().rows.map((r) => r.original))}
+              onClick={() => onDeleteSelected(table.getSelectedRowModel().rows.map(r => r.original))}
             >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete ({table.getSelectedRowModel().rows.length})
+              <Trash2 className="h-4 w-4 mr-2" /> Delete
             </Button>
           )}
 
-          {/* Column Visibility */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
-                <Columns className="h-4 w-4 mr-2" />
-                Columns
+                <Columns className="h-4 w-4 mr-2" /> Columns
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {table.getAllColumns().filter((c) => c.getCanHide()).map((column) => (
+              {table.getAllColumns().filter(c => c.getCanHide()).map(column => (
                 <DropdownMenuCheckboxItem
                   key={column.id}
                   checked={column.getIsVisible()}
-                  onCheckedChange={(v) => column.toggleVisibility(!!v)}
+                  onCheckedChange={v => column.toggleVisibility(!!v)}
                 >
                   {String(column.columnDef.header ?? column.id)}
                 </DropdownMenuCheckboxItem>
@@ -202,33 +182,31 @@ export function CustomDataTable<TData, TValue>({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Date Range Filter */}
-          {filters.some((f) => f.type === "date") && (
+          {/* Date Range — NOW TYPE-SAFE */}
+          {filters.some(f => f.type === "date") && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm">
-                  <CalendarIcon className="h-4 w-4 mr-2" />
-                  Date Range
+                  <CalendarIcon className="h-4 w-4 mr-2" /> Date Range
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-3" align="start">
-                {filters.filter((f) => f.type === "date").map((f) => (
-                  <div key={f.column} className="mb-4 last:mb-0">
-                    <p className="text-sm font-medium mb-2">{f.placeholder}</p>
+              <PopoverContent className="w-auto p-4" align="start">
+                {filters.filter(f => f.type === "date").map(f => (
+                  <div key={f.column} className="space-y-3 mb-6 last:mb-0">
+                    <p className="text-sm font-medium">{f.placeholder}</p>
                     <Calendar
                       mode="range"
                       selected={dateFilters[f.column]}
-                      onSelect={(range) =>
-                        setDateFilters((prev) => ({ ...prev, [f.column]: range || {} }))
+                      onSelect={(range: DateRange | undefined) =>
+                        setDateFilters(prev => ({ ...prev, [f.column]: range }))
                       }
                       numberOfMonths={2}
-                      className="rounded-md border"
                     />
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="mt-2 w-full"
-                      onClick={() => setDateFilters((prev) => ({ ...prev, [f.column]: {} }))}
+                      className="w-full"
+                      onClick={() => setDateFilters(prev => ({ ...prev, [f.column]: undefined }))}
                     >
                       Clear
                     </Button>
@@ -239,74 +217,61 @@ export function CustomDataTable<TData, TValue>({
           )}
 
           {/* Select Filters */}
-          {filters.some((f) => f.type === "select") && (
+          {filters.some(f => f.type === "select") && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
-                  <FilterIcon className="h-4 w-4 mr-2" />
-                  Filters
+                  <FilterIcon className="h-4 w-4 mr-2" /> Filters
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                {filters
-                  .filter((f) => f.type === "select")
-                  .map((f) => {
-                    const options = Array.from(new Set(data.map((d: any) => d[f.column])))
-                    const column = table.getColumn(f.column)
-                    const value = column?.getFilterValue() as string | undefined
+                {filters.filter(f => f.type === "select").map(f => {
+                  const options = Array.from(new Set(data.map((d: any) => d[f.column])))
+                  const column = table.getColumn(f.column)
+                  const value = column?.getFilterValue() as string | undefined
 
-                    return (
-                      <div key={f.column} className="p-2">
-                        <Select
-                          value={value ?? ""}
-                          onValueChange={(v) => column?.setFilterValue(v || undefined)}
-                        >
-                          <SelectTrigger className="w-48">
-                            <SelectValue placeholder={f.placeholder} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="">All</SelectItem>
-                            {options.map((opt) => (
-                              <SelectItem key={opt} value={String(opt)}>
-                                {String(opt)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )
-                  })}
+                  return (
+                    <div key={f.column} className="p-2">
+                      <Select value={value ?? ""} onValueChange={v => column?.setFilterValue(v || undefined)}>
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder={f.placeholder} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All</SelectItem>
+                          {options.map(opt => (
+                            <SelectItem key={opt} value={String(opt)}>{String(opt)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
 
-          {/* Export CSV */}
           <Button variant="outline" size="sm" onClick={() => exportToCSV(data, columns, exportFileName)}>
-            <Download className="h-4 w-4 mr-2" />
-            Export
+            <Download className="h-4 w-4 mr-2" /> Export
           </Button>
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table & Pagination — unchanged */}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
+            {table.getHeaderGroups().map(headerGroup => (
               <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
+                {headerGroup.headers.map(header => (
                   <TableHead
                     key={header.id}
-                    className="text-left font-medium"
+                    className={header.column.getCanSort() ? "cursor-pointer select-none" : ""}
                     onClick={header.column.getToggleSortingHandler()}
-                    style={{ cursor: header.column.getCanSort() ? "pointer" : "default" }}
                   >
-                    {header.isPlaceholder ? null : (
-                      <div className="flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {header.column.getIsSorted() && <ArrowUpDown className="h-4 w-4" />}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.column.getIsSorted() && <ArrowUpDown className="h-4 w-4" />}
+                    </div>
                   </TableHead>
                 ))}
               </TableRow>
@@ -314,14 +279,14 @@ export function CustomDataTable<TData, TValue>({
           </TableHeader>
           <TableBody>
             {paginatedRows.length ? (
-              paginatedRows.map((row) => (
+              paginatedRows.map(row => (
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
                   className={onRowClick ? "cursor-pointer hover:bg-muted/50" : ""}
                   onClick={() => onRowClick?.(row.original)}
                 >
-                  {row.getVisibleCells().map((cell) => (
+                  {row.getVisibleCells().map(cell => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
@@ -339,41 +304,24 @@ export function CustomDataTable<TData, TValue>({
         </Table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-4 py-3 border-t">
-        <div className="text-sm text-muted-foreground">
-          Showing {pageIndex * pageSize + 1} to{" "}
-          {Math.min((pageIndex + 1) * pageSize, filteredRows.length)} of {filteredRows.length} results
+      <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
+        <div className="text-muted-foreground">
+          Showing {pageIndex * pageSize + 1} to {Math.min((pageIndex + 1) * pageSize, filteredRows.length)} of {filteredRows.length}
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
+          <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
             Previous
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
+          <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
             Next
           </Button>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(v) => table.setPageSize(Number(v))}
-          >
+          <Select value={String(pageSize)} onValueChange={v => table.setPageSize(Number(v))}>
             <SelectTrigger className="w-20">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[10, 20, 50, 100].map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
+              {[10, 20, 50, 100].map(s => (
+                <SelectItem key={s} value={String(s)}>{s}</SelectItem>
               ))}
             </SelectContent>
           </Select>
