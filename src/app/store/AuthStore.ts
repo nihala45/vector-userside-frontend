@@ -1,25 +1,21 @@
 "use client";
+
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 interface Admin {
+  id: number;
+  username: string;
   email: string;
   is_superuser: boolean;
-  user_id: string | number;
 }
 
 interface AuthState {
   admin: Admin | null;
   access: string | null;
   refresh: string | null;
-
-  setAdminData: (
-    admin: Admin,
-    access: string,
-    refresh: string
-  ) => void;
-
-  logout: () => void;
+  setAdminData: (admin: Admin | null, access: string | null, refresh?: string | null) => void;
+  clearAdminData: () => void; // renamed for clarity
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -29,22 +25,14 @@ export const useAuthStore = create<AuthState>()(
       access: null,
       refresh: null,
 
-      setAdminData: (admin, access, refresh) =>
-        set({
-          admin,
-          access,
-          refresh,
-        }),
+      setAdminData: (admin, access, refresh = null) =>
+        set({ admin, access, refresh }),
 
-      logout: () =>
-        set({
-          admin: null,
-          access: null,
-          refresh: null,
-        }),
+      clearAdminData: () =>
+        set({ admin: null, access: null, refresh: null }),
     }),
     {
-      name: "auth-storage", 
+      name: "auth-storage",
     }
   )
 );
