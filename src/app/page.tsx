@@ -6,7 +6,7 @@ import Image from "next/image";
 export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
-      
+    
       {/* Left Section - Image */}
       <div className="hidden lg:flex lg:w-1/2 relative">
         <Image

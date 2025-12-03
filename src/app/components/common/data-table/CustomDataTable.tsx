@@ -15,15 +15,18 @@ import {
 } from "@tanstack/react-table"
 import { ArrowUpDown, Download, Trash2, Columns, CalendarIcon, FilterIcon } from "lucide-react"
 
-import { Button } from "@repo/ui/components/button"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu"
-import { Input } from "@repo/ui/components/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@repo/ui/components/table"
+} from "@/components/ui/dropdown-menu"
+import{
+  
+}
+import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Select,
   SelectContent,
@@ -32,9 +35,9 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@repo/ui/components/select"
-import { Calendar } from "@repo/ui/components/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@repo/ui/components/popover"
+} from "@/components/ui/select"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 interface FilterConfig {
   type: "select" | "date"
