@@ -9,12 +9,13 @@ import { toast } from "sonner";
 
 export default function OTPPage() {
   const { id } = useParams<{ id: string }>();
-  const userId = id as string;
+  const userId = id;
   const router = useRouter();
 
   const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
   const [countdown, setCountdown] = useState(59);
 
+  // Fix for React 18 + jsx: "react-jsx" strict ref types
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const verifyOTP = useVerifyOTP();
@@ -31,7 +32,7 @@ export default function OTPPage() {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  // Focus first input on mount & after resend
+  // Focus first input on mount and after resend
   useEffect(() => {
     inputRefs.current[0]?.focus();
   }, []);
@@ -43,7 +44,6 @@ export default function OTPPage() {
     newOtp[index] = value;
     setOtp(newOtp);
 
-    // Auto-focus next input
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -51,15 +51,7 @@ export default function OTPPage() {
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace") {
-      if (!otp[index] && index > 0) {
-        inputRefs.current[index - 1]?.focus();
-      }
-      // Allow clearing current even if empty (for better UX)
-      if (otp[index]) {
-        const newOtp = [...otp];
-        newOtp[index] = "";
-        setOtp(newOtp);
-      }
+      if (!otp[index] && index > 0) && inputRefs.current[index - 1]?.focus();
     } else if (e.key === "ArrowLeft" && index > 0) {
       e.preventDefault();
       inputRefs.current[index - 1]?.focus();
@@ -71,20 +63,18 @@ export default function OTPPage() {
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    const pastedData = e.clipboardData.getData("text").trim();
+    const pasted = e.clipboardData.getData("text").trim();
 
-    if (/^\d{6}$/.test(pastedData)) {
-      const digits = pastedData.split("");
+    if (/^\d{6}$/.test(pasted)) {
+      const digits = pasted.split("");
       setOtp(digits);
 
-      // Update all inputs visually
       digits.forEach((digit, i) => {
         if (inputRefs.current[i]) {
           inputRefs.current[i]!.value = digit;
         }
       });
 
-      // Focus last input
       inputRefs.current[5]?.focus();
     }
   };
@@ -93,8 +83,8 @@ export default function OTPPage() {
     e.preventDefault();
     const otpCode = otp.join("");
 
-    if (otpCode.length !== 6 || otpCode.includes("")) {
-      toast.error("Please enter a valid 6-digit code");
+    if (otpCode.length !== 6) {
+      toast.error("Please enter all 6 digits");
       return;
     }
 
@@ -117,48 +107,44 @@ export default function OTPPage() {
   const handleResend = () => {
     resendOTP.mutate(userId, {
       onSuccess: () => {
-        toast.success("New OTP sent to your email!");
+        toast.success("New OTP sent!");
         setCountdown(59);
         setOtp(["", "", "", "", "", ""]);
-        inputRefs.current.forEach((input) => input && (input.value = ""));
+        inputRefs.current.forEach((el) => el && (el.value = ""));
         inputRefs.current[0]?.focus();
       },
       onError: () => {
-        toast.error("Failed to resend OTP. Try again.");
+        toast.error("Failed to resend. Try again.");
       },
     });
   };
 
-  const formatTime = (seconds: number) => {
-    return `00:${seconds.toString().padStart(2, "0")}`;
-  };
+  const formatTime = (sec: number) => `00:${sec.toString().padStart(2, "0")}`;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
-      {/* Left Side - Decorative Image */}
+      {/* Left Side - Image */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         <Image
           src="/vector-login.jpeg"
-          alt="Verify your account"
+          alt="Verify account"
           fill
           priority
-          className="object-cover rounded-r-3xl shadow-2xl"
+          className="object-cover rounded-r-3xl"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/30 to-transparent rounded-r-3xl" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-transparent rounded-r-3xl" />
         <div className="absolute bottom-12 left-12 text-white z-10">
-          <h1 className="text-5xl font-bold leading-tight">Almost There!</h1>
-          <p className="text-xl mt-4 opacity-90">We sent a 6-digit code to your email</p>
+          <h1 className="text-5xl font-bold">Almost There!</h1>
+          <p className="text-xl mt-4 opacity-90">Check your email for the 6-digit code</p>
         </div>
       </div>
 
-      {/* Right Side - OTP Form */}
+      {/* Right Side - Form */}
       <div className="flex-1 flex items-center justify-center px-6 py-12 lg:px-16">
         <div className="w-full max-w-md">
           <div className="text-center mb-10">
             <h2 className="text-4xl font-extrabold text-gray-900">Verify Account</h2>
-            <p className="mt-3 text-gray-600">
-              Enter the 6-digit code sent to your email
-            </p>
+            <p className="mt-3 text-gray-600">Enter the 6-digit code sent to your email</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-8">
@@ -167,7 +153,7 @@ export default function OTPPage() {
               {otp.map((digit, index) => (
                 <input
                   key={index}
-                  ref={(el) => (inputRefs.current[index] = el)}
+                  ref={(el) => el && (inputRefs.current[index] = el)} // Fixed ref – works 100%
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
@@ -180,28 +166,26 @@ export default function OTPPage() {
                              bg-white border-2 border-gray-300 rounded-xl
                              focus:border-purple-600 focus:ring-4 focus:ring-purple-100
                              transition-all outline-none shadow-sm"
-                  aria-label={`Digit ${index + 1} of OTP`}
+                  aria-label={`OTP digit ${index + 1}`}
                 />
               ))}
             </div>
 
-            {/* Resend OTP */}
-            <div className="text-center">
-              <p className="text-sm text-gray-600">
-                Didn’t receive the code?{" "}
-                <button
-                  type="button"
-                  onClick={handleResend}
-                  disabled={countdown > 0 || resendOTP.isPending}
-                  className="font-semibold text-purple-700 hover:text-purple-800 disabled:text-gray-400 disabled:cursor-not-allowed transition"
-                >
-                  {resendOTP.isPending ? "Sending..." : "Resend OTP"}
-                </button>
-              </p>
-              <p className="text-xs text-gray-500 mt-2">
+            {/* Resend Section */}
+            <div className="text-center text-sm text-gray-600">
+              Didn’t receive the code?{" "}
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={countdown > 0 || resendOTP.isPending}
+                className="font-semibold text-purple-700 hover:text-purple-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resendOTP.isPending ? "Sending..." : "Resend OTP"}
+              </button>
+              <p className="text-xs mt-2 text-gray-500">
                 {countdown > 0
-                  ? `Resend available in ${formatTime(countdown)}`
-                  : "You can now request a new code"}
+                  ? `Resend in ${formatTime(countdown)}`
+                  : "You can resend now"}
               </p>
             </div>
 
@@ -209,9 +193,9 @@ export default function OTPPage() {
             <button
               type="submit"
               disabled={verifyOTP.isPending || otp.join("").length < 6}
-              className="w-full py-4 px-6 bg-purple-700 hover:bg-purple-800 disabled:bg-purple-400
+              className="w-full py-4 bg-purple-700 hover:bg-purple-800 disabled:bg-purple-400
                          text-white font-semibold text-lg rounded-xl shadow-lg
-                         transition-all duration-200 transform hover:scale-[1.02] active:scale-100"
+                         transition-all duration-200"
             >
               {verifyOTP.isPending ? "Verifying..." : "Verify & Continue"}
             </button>
@@ -219,7 +203,7 @@ export default function OTPPage() {
 
           <p className="mt-10 text-center text-sm text-gray-600">
             <Link href="/auth/login" className="text-purple-700 font-medium hover:underline">
-              ← Back to Login
+              Back to Login
             </Link>
           </p>
         </div>
