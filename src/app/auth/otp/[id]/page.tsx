@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 export default function OTPPage() {
   const { id } = useParams();
-  const userId = id;
+  const userId = id as string;
   const router = useRouter();
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
