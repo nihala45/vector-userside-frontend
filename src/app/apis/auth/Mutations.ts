@@ -81,7 +81,7 @@ export function useRegisterUser() {
     },
 
     onSuccess: (data) => {
-      toast.success(data.msg || "Registration successful!"); 
+      toast.success(data.message || "Registration successful!"); 
       router.push(`/auth/otp/${data.id}`);
     },
 
@@ -114,7 +114,7 @@ export function useVerifyOTP() {
     },
 
     onSuccess: (data) => {
-      toast.success(data.msg )
+      toast.success(data.message )
 
       setAdminData(
         {
@@ -199,7 +199,7 @@ export function useForgetPassword() {
     },
 
     onSuccess: (data) => {
-      toast.success(data.msg || "OTP sent!");
+      toast.success(data.message || "OTP sent!");
 
     
       router.push(`/auth/otp/${data.id}`);
