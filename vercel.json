@@ -1,7 +1,4 @@
 {
   "installCommand": "npm ci",
-  "buildCommand": "npm run build",
-  "engines": {
-    "node": "20.x"
-  }
+  "buildCommand": "npm run build"
 }
