@@ -67,7 +67,9 @@ const exportToCSV = (data: any[], columns: ColumnDef<any, any>[], filename: stri
       })
       .join(",")
   )
-  const blob = new Blob([[headers], ...rows].map(r => r.join("\n")).join("\n"), { type: "text/csv" })
+ const csv = [[headers], ...rows].map(r => r.join("\n")).join("\n");
+const blob = new Blob([csv], { type: "text/csv" });
+
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
