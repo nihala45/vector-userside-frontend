@@ -81,7 +81,7 @@ export default function OTPPage() {
       {
         onSuccess: () => {
           toast.success("Verified successfully!");
-          router.push("/auth/login");
+          router.push("/");
         },
         onError: (err: any) => {
           toast.error(err?.response?.data?.message || "Invalid OTP");
