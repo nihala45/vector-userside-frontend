@@ -7,30 +7,27 @@ import { useLogoutUser } from "@/src/app/apis/auth/Mutations";
 
 export default function Header() {
   const { admin, access, clearAdminData, refresh } = useAuthStore();
-  const { mutate: logoutUser, isLoading } = useLogoutUser();
 
-  const isAuthenticated = !!access; // ✅ LOGIN STATUS BASED ON TOKEN
+  const { mutate: logoutUser, status } = useLogoutUser();
 
-  /* ✅ HANDLE LOGOUT WITH API + STORE CLEAR */
+  const isAuthenticated = !!access;
+  const isLoggingOut = status === "pending"; 
+
+  
   const handleLogout = () => {
     if (!refresh) {
-      // ✅ If refresh token missing, just clear local state
       clearAdminData();
       return;
     }
 
-    logoutUser(
-      { refresh }, // ✅ send refresh token to backend
-      {
-        onSuccess: () => {
-          clearAdminData(); // ✅ Clear Zustand after successful logout
-        },
-        onError: () => {
-          // ✅ Even if API fails, force local logout
-          clearAdminData();
-        },
-      }
-    );
+    logoutUser(refresh, {
+      onSuccess: () => {
+        clearAdminData();
+      },
+      onError: () => {
+        clearAdminData();
+      },
+    });
   };
 
   return (
@@ -97,13 +94,13 @@ export default function Header() {
                 {admin?.username?.charAt(0)?.toUpperCase() || "U"}
               </Link>
 
-              {/* ✅ LOGOUT (API CONNECTED) */}
+              {/* ✅ LOGOUT (TYPE-SAFE) */}
               <button
                 onClick={handleLogout}
-                disabled={isLoading}
+                disabled={isLoggingOut}
                 className="rounded-lg border border-white px-5 py-2 text-white hover:bg-white hover:text-violet-700 transition disabled:opacity-50"
               >
-                {isLoading ? "Logging out..." : "Logout"}
+                {isLoggingOut ? "Logging out..." : "Logout"}
               </button>
             </>
           )}
