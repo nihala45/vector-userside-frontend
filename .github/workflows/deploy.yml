@@ -10,22 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ✅ Checkout source code
       - name: Checkout
         uses: actions/checkout@v3
 
+      # ✅ Setup Node.js (Safe version)
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
 
+      # ✅ Install dependencies
       - name: Install dependencies
         run: npm install
 
+      # ✅ Build project
       - name: Build
         run: npm run build
 
+      # ✅ Deploy to Vercel (No project/org conflict)
       - name: Deploy to Vercel
-        run: |
-          npx vercel --prod --yes --token=$VERCEL_TOKEN
+        run: npx vercel --prod --yes --token=$VERCEL_TOKEN
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
