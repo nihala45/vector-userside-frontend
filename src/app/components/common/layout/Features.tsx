@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useGetFeatures } from "@/src/app/apis/website-management/Mutations";
 
 const FeaturesCarousel = () => {
   const features = [
